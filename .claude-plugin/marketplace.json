@@ -1,0 +1,8 @@
+{
+  "name": "hedera",
+  "description": "Hedera plugins for Claude Code, Claude Desktop and Devin.",
+  "owner": {
+    "name": "Hashgraph"
+  },
+  "plugins": []
+}
