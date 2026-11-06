@@ -1,0 +1,60 @@
+name: "Validate Marketplace"
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+defaults:
+  run:
+    shell: bash
+
+# Plugin PRs come from forks, so this uses pull_request (not pull_request_target) and no secrets.
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-marketplace-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate marketplace
+    runs-on: hg-hcm-lin-md
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+
+      - name: Test the validator
+        run: node --test scripts/*.test.mjs
+
+      - name: Validate manifest, plugins and pinned commits
+        run: node scripts/validate-marketplace.mjs . --check-remote
+
+      # Claude's own validator, for plugins from anyone: the manifest and every in-repo plugin's
+      # plugin.json, then each plugin folder's skills, agents, hooks and commands. Errors fail the
+      # PR; warnings do not (an empty marketplace, for one, warns). Pinned git plugins are not in
+      # this repo, so Claude checks those when someone installs them.
+      - name: Claude plugin validate
+        env:
+          CLAUDE_CODE_VERSION: 2.1.296
+        run: |
+          claude_validate() { npx --yes "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" plugin validate "$@"; }
+          claude_validate .
+          for dir in plugins/*/; do
+            [ -d "$dir" ] || continue
+            claude_validate "$dir"
+          done
