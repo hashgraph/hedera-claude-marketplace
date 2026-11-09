@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "hedera-payments": {
+      "type": "http",
+      "url": "https://payment.agent-accounts.haw.blockydevs.dev/mcp"
+    },
+    "agent-credential": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/servers/agent-credential-mcp.mjs"
+      ],
+      "env": {
+        "AGENT_CREDENTIAL_HOME": "~/.hedera-agent-accounts/claude"
+      }
+    }
+  }
+}
