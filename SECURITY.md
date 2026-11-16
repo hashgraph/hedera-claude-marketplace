@@ -30,7 +30,7 @@ Step 3 reaches a user once their copy of the marketplace has it. That copy refre
 `claude plugin marketplace update hedera`, or on its own if they turned on auto-update for this
 marketplace. Claude Code then drops the plugin from their enabled plugins (the `renames` entry) and,
 because this marketplace sets `forceRemoveDeletedPlugins`, uninstalls it from the user, project and
-local scopes at the next session start. A plugin that only managed settings installed stays until an
+local scopes at the next session start. A plugin installed through managed settings stays until an
 admin removes it.
 
 Until then the plugin stays installed. Users who don't want to wait can uninstall it themselves:
@@ -40,8 +40,3 @@ claude plugin uninstall <plugin>@hedera
 ```
 
 Add `--scope project` or `--scope local` if they installed it at that scope.
-
-## Response time
-
-Reports are acknowledged under the Hashgraph security policy. Once a listed plugin is confirmed
-malicious or compromised, maintainers merge the withdrawn stub (step 1 above) within 1 working day.
