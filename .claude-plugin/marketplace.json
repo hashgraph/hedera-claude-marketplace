@@ -4,5 +4,6 @@
   "owner": {
     "name": "Hashgraph"
   },
+  "forceRemoveDeletedPlugins": true,
   "plugins": []
 }

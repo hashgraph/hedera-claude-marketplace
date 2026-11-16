@@ -17,15 +17,23 @@ security audit of the plugin.
 When a listed plugin is malicious or compromised, maintainers withdraw it in this order:
 
 1. Merge a stub of the plugin with a higher `version`. The stub has no hooks, MCP servers or skills,
-   and its description says the plugin was withdrawn and why. Users who update get the stub.
+   and its description says the plugin was withdrawn and why. Users who update get the stub. It
+   protects them until step 3 reaches them.
 2. Publish an advisory that names the affected versions.
 3. Once the stub has been out long enough, remove the plugin's entry from
-   `.claude-plugin/marketplace.json`.
+   `.claude-plugin/marketplace.json` and add `"<plugin>": null` to the top-level `renames` map
+   (create the map if it's missing).
 
-## Removing an entry doesn't uninstall the plugin
+## Copies users already installed
 
-Removing or replacing an entry doesn't uninstall copies users already have. Users who installed the
-plugin must uninstall it themselves:
+Step 3 reaches a user once their copy of the marketplace has it. That copy refreshes when they run
+`claude plugin marketplace update hedera`, or on its own if they turned on auto-update for this
+marketplace. Claude Code then drops the plugin from their enabled plugins (the `renames` entry) and,
+because this marketplace sets `forceRemoveDeletedPlugins`, uninstalls it from the user, project and
+local scopes at the next session start. A plugin that only managed settings installed stays until an
+admin removes it.
+
+Until then the plugin stays installed. Users who don't want to wait can uninstall it themselves:
 
 ```bash
 claude plugin uninstall <plugin>@hedera
