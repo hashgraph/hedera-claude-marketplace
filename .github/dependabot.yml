@@ -5,3 +5,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # The Claude Code CLI that "Claude plugin validate" runs, pinned by its lockfile.
+  - package-ecosystem: npm
+    directory: /ci/claude-code
+    schedule:
+      interval: weekly
