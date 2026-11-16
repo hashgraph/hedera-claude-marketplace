@@ -41,6 +41,10 @@ jobs:
       - name: Validate manifest, plugins and pinned commits
         run: node scripts/validate-marketplace.mjs . --check-remote
 
+      # Compares every package vendored under plugins/ with its npm release. Needs registry.npmjs.org.
+      - name: Verify vendored packages against npm
+        run: node scripts/verify-vendored.mjs .
+
       # Claude's own validator, for plugins from anyone: the manifest and every in-repo plugin's
       # plugin.json, then each plugin folder's skills, agents, hooks and commands. Errors fail the
       # PR; warnings do not (an empty marketplace, for one, warns). Pinned git plugins are not in

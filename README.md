@@ -77,6 +77,9 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
 
 Run it locally with `node scripts/validate-marketplace.mjs . --check-remote`.
 
+`scripts/verify-vendored.mjs` also compares every package vendored under `plugins/` with its npm
+release. See [CONTRIBUTING](CONTRIBUTING.md#plugins-that-ship-vendored-packages-or-native-binaries).
+
 ## Review
 
 Maintainers approve every change through [CODEOWNERS](.github/CODEOWNERS). Sign off every commit for
