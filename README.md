@@ -82,14 +82,15 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
   keystore.
 - On a pull request (`--base=origin/main`), an in-repo plugin whose files changed must raise its
   `version` in semver order, so a version never goes down.
-- Hook and MCP server commands don't pipe downloaded or base64-decoded content to a shell, don't use
-  `sudo`, and use no path outside the plugin (see the plugin security policy in
-  [CONTRIBUTING.md](CONTRIBUTING.md)).
+- Hook, MCP server, LSP server and monitor commands don't run downloaded or base64-decoded content
+  in a shell or interpreter, don't use `sudo`, and use no path outside the plugin (see the plugin
+  security policy in [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-The job summary lists what each changed plugin runs: MCP servers, hook commands, `bin/` files,
-scripts named in skills and HTML comments in Markdown. It highlights a new plugin named `hedera-`,
-`hashgraph-` or `hiero-`, a changed source on an existing entry, and a remote MCP server on a host
-the marketplace doesn't already use. These don't fail the run; reviewers check them.
+The job summary lists what each changed plugin runs: MCP and LSP servers, hooks (commands and
+prompts), monitors, `bin/` files, scripts named in skills and HTML comments in Markdown. It
+highlights a new plugin named `hedera-`, `hashgraph-` or `hiero-`, a changed source on an existing
+entry, and a remote MCP server on a host the marketplace doesn't already use. These don't fail the
+run; reviewers check them.
 
 Run it locally with `node scripts/validate-marketplace.mjs . --check-remote --base=origin/main`.
 

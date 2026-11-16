@@ -48,22 +48,23 @@ Some plugins commit their built dependencies, including native `*.node` librarie
 
 ## Plugin security policy
 
-Hooks and MCP servers may run files that ship inside the plugin, for example `node`, `npx` or `uvx`
-with a path inside the plugin, relative to its root or under `${CLAUDE_PLUGIN_ROOT}`. Remote MCP
-servers are allowed.
+Hooks, MCP and LSP servers and monitors may run files that ship inside the plugin, for example
+`node`, `npx` or `uvx` with a path inside the plugin, relative to its root or under
+`${CLAUDE_PLUGIN_ROOT}`. Remote MCP servers are allowed.
 
-CI rejects a hook or MCP server command that:
+CI rejects a hook, MCP server, LSP server or monitor command that:
 
-- pipes downloaded content to a shell (`curl … | sh`, `wget … | bash`)
-- pipes base64-decoded content to a shell (`base64 -d … | sh`)
+- pipes downloaded content to a shell or interpreter (`curl … | sh`, `wget … | python3`)
+- runs downloaded content through `$(curl …)`, backticks or `<(curl …)`
+- pipes base64-decoded content to a shell or interpreter (`base64 -d … | sh`)
 - uses `sudo`
 - uses an absolute path, a path under `~` or `$HOME`, or a relative path that leaves the plugin
 
 Environment variable values are not checked, so a data folder under `~` is fine.
 
 CI lists everything a plugin can run or show the model in the pull request's job summary, so
-reviewers see it without reading the whole diff: MCP servers, hook commands, `bin/` files, scripts
-named in skills and HTML comments in Markdown.
+reviewers see it without reading the whole diff: MCP and LSP servers, hooks (commands and prompts),
+monitors, `bin/` files, scripts named in skills and HTML comments in Markdown.
 
 ## In the pull request
 
