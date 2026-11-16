@@ -59,8 +59,9 @@ a pull request, by hand or from its own release workflow.
 }
 ```
 
-`github`, `url` and `git-subdir` are accepted. `sha` is required and must be the full 40-character
-commit. Reviewers approve exactly that commit, and an update is a pull request that changes `sha`.
+`github`, `url` and `git-subdir` are accepted. `ref` and `sha` are both required: `ref` is a release
+tag and `sha` is the full 40-character commit that tag points to. Reviewers approve exactly that
+commit, and an update is a pull request that changes both.
 Details are in the [Claude Code marketplace reference](https://code.claude.com/docs/en/plugins/marketplace-reference).
 
 ## What CI checks
@@ -74,8 +75,9 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
   same `name` and a semver `version`.
 - Files under `plugins/` include no symlinks, submodules, `.gitattributes` drivers or invisible
   Unicode characters, and none is over 16 MB.
-- A pinned git entry uses an `https://github.com/<owner>/<repo>` URL, a relative `path` and a
-  full `sha` that can be fetched.
+- A pinned git entry uses an `https://github.com/<owner>/<repo>` URL, a relative `path`, a tag
+  `ref` and a full `sha`. With `--check-remote`, the tag must resolve to exactly that commit in the
+  upstream repository.
 - Every folder in `plugins/` has an entry, and no folder holds key material, `.env` files or a
   keystore.
 
