@@ -1,0 +1,38 @@
+# Security
+
+## Report a vulnerability
+
+To report a vulnerability in this repository or in a plugin it lists, follow the
+[Hashgraph security policy](https://github.com/hashgraph/.github/blob/main/SECURITY.md). Report a
+malicious or compromised plugin the same way. Don't open a public issue or pull request about it.
+
+## What a listing means
+
+Maintainers review every change to this repository (see [CODEOWNERS](.github/CODEOWNERS)). CI
+checks what the README lists under [What CI checks](README.md#what-ci-checks). A listing isn't a
+security audit of the plugin.
+
+## Withdraw a plugin
+
+When a listed plugin is malicious or compromised, maintainers withdraw it in this order:
+
+1. Merge a stub of the plugin with a higher `version`. The stub has no hooks, MCP servers or skills,
+   and its description says the plugin was withdrawn and why. Users who update get the stub.
+2. Publish an advisory that names the affected versions.
+3. Once the stub has been out long enough, remove the plugin's entry from
+   `.claude-plugin/marketplace.json`.
+
+## Removing an entry doesn't uninstall the plugin
+
+Removing or replacing an entry doesn't uninstall copies users already have. Users who installed the
+plugin must uninstall it themselves:
+
+```bash
+claude plugin uninstall <plugin>@hedera
+```
+
+Add `--scope project` or `--scope local` if they installed it at that scope.
+
+## Response time
+
+TODO(maintainers): agree a target time for the first response to a report.

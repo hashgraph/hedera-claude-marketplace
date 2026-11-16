@@ -21,6 +21,12 @@ To pick up new releases:
 claude plugin marketplace update hedera
 ```
 
+When you want a fixed version, pin a release tag when you add the marketplace:
+
+```bash
+claude plugin marketplace add hashgraph/hedera-claude-marketplace@<tag>
+```
+
 Claude Desktop adds this same GitHub repository as a marketplace.
 
 Devin has no marketplace step. It installs an in-repo plugin folder straight from the repository:
@@ -72,8 +78,8 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
 - An in-repo entry points at `./plugins/<name>`, that folder exists, and its `plugin.json` has the
   same `name` and a semver `version`.
 - A pinned git entry uses `https://` and a full `sha` that can be fetched.
-- Every folder in `plugins/` has an entry, and no folder holds key material, `.env` files or a
-  keystore.
+- Every folder in `plugins/` has an entry and is checked for key material, `.env` files and
+  keystores.
 
 Run it locally with `node scripts/validate-marketplace.mjs . --check-remote`.
 
@@ -82,3 +88,8 @@ Run it locally with `node scripts/validate-marketplace.mjs . --check-remote`.
 Maintainers approve every change through [CODEOWNERS](.github/CODEOWNERS). Sign off every commit for
 the DCO (`git commit -s`). Pull request titles must follow
 [Conventional Commits](https://www.conventionalcommits.org/).
+
+## Security
+
+To report a vulnerability or a malicious plugin, and to see how a plugin is withdrawn, read
+[SECURITY.md](SECURITY.md).
