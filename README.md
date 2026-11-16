@@ -70,6 +70,9 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
 - The marketplace is named `hedera` and has an owner.
 - Plugin names are lowercase kebab-case, at most 64 characters, unique, and not reserved (such as
   `node_modules`).
+- Entries carry only listing fields: `name`, `source`, `description`, `version`, `author`,
+  `homepage`, `repository`, `license`, `keywords`, `category`, `tags` and `displayName`. Hooks,
+  MCP servers, skills and other components go in the plugin's own files, where CI checks them.
 - An in-repo entry points at `./plugins/<name>`, that folder exists, and its `plugin.json` has the
   same `name` and a semver `version`.
 - Files under `plugins/` include no symlinks, submodules, `.gitattributes` drivers or invisible
