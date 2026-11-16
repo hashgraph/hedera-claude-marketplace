@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: validate-marketplace-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: validate-marketplace-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -45,11 +45,14 @@ jobs:
       # plugin.json, then each plugin folder's skills, agents, hooks and commands. Errors fail the
       # PR; warnings do not (an empty marketplace, for one, warns). Pinned git plugins are not in
       # this repo, so Claude checks those when someone installs them.
+      # The version is pinned by ci/claude-code/package-lock.json. Install scripts don't run, so
+      # the package's postinstall never copies the native binary over its bin/ stub. We call
+      # cli-wrapper.cjs instead, the fallback the package ships for --ignore-scripts installs. If a
+      # later version drops it, this step fails on the Dependabot PR that bumps it.
       - name: Claude plugin validate
-        env:
-          CLAUDE_CODE_VERSION: 2.1.296
         run: |
-          claude_validate() { npx --yes "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" plugin validate "$@"; }
+          npm ci --ignore-scripts --prefix ci/claude-code
+          claude_validate() { node ci/claude-code/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs plugin validate "$@"; }
           claude_validate .
           for dir in plugins/*/; do
             [ -d "$dir" ] || continue
