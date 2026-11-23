@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "hedera-payments": {
+      "type": "http",
+      "url": "https://testnet.agent-accounts.hedera.com/mcp"
+    },
+    "agent-credential": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/servers/agent-credential-mcp.mjs"
+      ],
+      "env": {
+        "AGENT_CREDENTIAL_HOME": "~/.hedera-agent-accounts/claude",
+        "X402_FINALIZE_URL": "https://testnet.agent-accounts.hedera.com/api/x402/finalize"
+      }
+    }
+  }
+}

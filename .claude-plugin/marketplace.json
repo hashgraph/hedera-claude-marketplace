@@ -4,5 +4,11 @@
   "owner": {
     "name": "Hashgraph"
   },
-  "plugins": []
+  "plugins": [
+    {
+      "name": "hedera-agent-accounts",
+      "source": "./plugins/hedera-agent-accounts",
+      "description": "Agent identity, payments, and Hedera signing for AI agents on Hedera."
+    }
+  ]
 }
