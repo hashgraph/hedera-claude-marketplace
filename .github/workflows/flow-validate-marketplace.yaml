@@ -41,8 +41,8 @@ jobs:
       - name: Validate manifest, plugins and pinned commits
         run: node scripts/validate-marketplace.mjs . --check-remote
 
-      # Claude's own validator, for plugins from anyone: the manifest and every in-repo plugin's
-      # plugin.json, then each plugin folder's skills, agents, hooks and commands. Errors fail the
+      # Claude's own validator, for plugins from anyone: the manifest and every in-repo Claude
+      # plugin's plugin.json, then each plugin folder's skills, agents, hooks and commands. Errors fail the
       # PR; warnings do not (an empty marketplace, for one, warns). Pinned git plugins are not in
       # this repo, so Claude checks those when someone installs them.
       - name: Claude plugin validate
@@ -52,6 +52,6 @@ jobs:
           claude_validate() { npx --yes "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" plugin validate "$@"; }
           claude_validate .
           for dir in plugins/*/; do
-            [ -d "$dir" ] || continue
+            [ -f "${dir}.claude-plugin/plugin.json" ] || continue
             claude_validate "$dir"
           done

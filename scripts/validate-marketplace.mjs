@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// Checks a Hedera plugin marketplace repo: the manifest, every plugin entry, and the plugins/ tree.
-// No dependencies. Identical in hedera-claude-marketplace and hedera-codex-marketplace.
+// Checks the Hedera plugin marketplace repo: the Claude and Codex catalogs, every plugin entry, the
+// plugin folders, and the plugins/ tree. No dependencies.
 //
-//   node scripts/validate-marketplace.mjs [root] [--harness=claude|codex] [--check-remote[=true|false]]
+//   node scripts/validate-marketplace.mjs [root] [--check-remote[=true|false]]
 //
-// --harness defaults to whichever manifest exists under root. --check-remote also fetches every
-// pinned git commit over https, to prove it exists and is public (needs network and git).
+// A plugin lives in plugins/<name>/, with a manifest for each harness it supports side by side
+// (.claude-plugin/, .codex-plugin/, .antigravity-plugin/); each harness reads only its own.
+// --check-remote also fetches every pinned git commit over https, to prove it exists and is
+// public (needs network and git).
 import { execFileSync } from 'node:child_process';
 import {
   closeSync,
@@ -36,6 +38,16 @@ export const HARNESSES = {
     gitSourceTypes: ['url', 'git-subdir'],
   },
 };
+
+/** Antigravity reads no catalog a user can add, so it installs a plugin folder by URL. */
+export const ANTIGRAVITY = {
+  manifestPaths: ['.antigravity-plugin/plugin.json'],
+};
+
+export const PLUGINS_DIR = 'plugins';
+const ALL_MANIFESTS = [
+  ...new Set([...Object.values(HARNESSES), ANTIGRAVITY].flatMap(target => target.manifestPaths)),
+];
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -117,7 +129,8 @@ function findPackagingProblems(pluginsDir) {
     } else if (statSync(file).size >= LFS_POINTER.length && startsWithLfsPointer(file)) {
       problems.push(`plugins/${rel}: is a Git LFS pointer, commit the real file instead`);
     }
-    if (rel.endsWith('.node')) {
+    // A plugin's root is plugins/<name>; a file directly in plugins/ is reported elsewhere.
+    if (rel.endsWith('.node') && rel.split('/').length > 1) {
       const plugin = rel.split('/')[0];
       nativeByPlugin.set(plugin, (nativeByPlugin.get(plugin) ?? 0) + 1);
     }
@@ -179,33 +192,38 @@ function checkRemoteCommit(url, sha) {
 function checkLocalEntry(root, entry, harness, problem) {
   const { source } = entry;
   const declared = typeof source === 'string' ? source : source.path;
-  const expected = `./plugins/${entry.name}`;
+  const expected = `./${PLUGINS_DIR}/${entry.name}`;
   if (declared !== expected) {
     problem(`local source must be "${expected}", got ${JSON.stringify(declared)}`);
     return;
   }
-  const pluginDir = path.join(root, 'plugins', entry.name);
+  const pluginDir = path.join(root, PLUGINS_DIR, entry.name);
   if (!existsSync(pluginDir) || !statSync(pluginDir).isDirectory()) {
     problem(`${expected} does not exist`);
     return;
   }
-  const manifestPath = HARNESSES[harness].manifestPaths.find(rel =>
-    existsSync(path.join(pluginDir, rel)),
-  );
+  const { manifestPaths } = HARNESSES[harness];
+  checkPluginManifest(pluginDir, expected, manifestPaths, entry.name, 'entry', problem);
+}
+
+/** The plugin's manifest exists, is JSON, and has `name` (the entry's or the folder's) and a
+ *  semver `version`. */
+function checkPluginManifest(pluginDir, label, manifestPaths, name, nameFrom, problem) {
+  const manifestPath = manifestPaths.find(rel => existsSync(path.join(pluginDir, rel)));
   if (!manifestPath) {
-    problem(`${expected} has no ${HARNESSES[harness].manifestPaths.join(' or ')}`);
+    problem(`${label} has no ${manifestPaths.join(' or ')}`);
     return;
   }
   let manifest;
   try {
     manifest = readJson(path.join(pluginDir, manifestPath));
   } catch (error) {
-    problem(`${expected}/${manifestPath} is not valid JSON (${error.message})`);
+    problem(`${label}/${manifestPath} is not valid JSON (${error.message})`);
     return;
   }
-  if (manifest.name !== entry.name) {
+  if (manifest.name !== name) {
     problem(
-      `${manifestPath} name ${JSON.stringify(manifest.name)} must equal the entry name "${entry.name}"`,
+      `${manifestPath} name ${JSON.stringify(manifest.name)} must equal the ${nameFrom} name "${name}"`,
     );
   }
   if (typeof manifest.version !== 'string' || !SEMVER.test(manifest.version)) {
@@ -215,7 +233,17 @@ function checkLocalEntry(root, entry, harness, problem) {
   }
 }
 
-/** Returns a list of problems; empty means the marketplace is valid. */
+/** Plugin folder names under plugins/ (directories only; validatePluginFolders reports the rest). */
+function pluginFolders(root) {
+  const dir = path.join(root, PLUGINS_DIR);
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+  return readdirSync(dir)
+    .sort()
+    .filter(name => statSync(path.join(dir, name)).isDirectory());
+}
+
+/** Returns a list of problems with one catalog; empty means it is valid. The plugins/ tree scans
+ *  are not part of it: validateRepo runs them once for every harness. */
 export function validateMarketplace(root, harness, { checkRemote = false } = {}) {
   const target = HARNESSES[harness];
   if (!target) return [`unknown harness "${harness}" (use claude or codex)`];
@@ -290,13 +318,51 @@ export function validateMarketplace(root, harness, { checkRemote = false } = {})
     }
   });
 
-  const pluginsDir = path.join(root, 'plugins');
-  if (existsSync(pluginsDir)) {
-    for (const name of readdirSync(pluginsDir).sort()) {
-      if (statSync(path.join(pluginsDir, name)).isDirectory() && !localNames.has(name)) {
-        problems.push(`plugins/${name}: directory has no matching local entry in the marketplace`);
-      }
+  // A folder carrying this harness's manifest is a plugin for it, so it must be listed here.
+  for (const name of pluginFolders(root)) {
+    const manifest = target.manifestPaths.find(rel =>
+      existsSync(path.join(root, PLUGINS_DIR, name, rel)),
+    );
+    if (manifest && !localNames.has(name)) {
+      problems.push(`${PLUGINS_DIR}/${name}: has ${manifest} but no local entry in the marketplace`);
     }
+  }
+  return problems;
+}
+
+/** Every entry in plugins/ is a plugin folder with at least one harness manifest. Antigravity has
+ *  no catalog, so its manifest is checked here: its name must be the folder's. */
+function validatePluginFolders(root) {
+  const problems = [];
+  const dir = path.join(root, PLUGINS_DIR);
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return problems;
+  for (const name of readdirSync(dir).sort()) {
+    const rel = `${PLUGINS_DIR}/${name}`;
+    // Messages that already name the folder keep it once.
+    const problem = message =>
+      problems.push(message.startsWith(rel) ? message : `${rel}: ${message}`);
+    const pluginDir = path.join(dir, name);
+    if (!statSync(pluginDir).isDirectory()) problem('not a plugin folder');
+    else if (!NAME.test(name)) problem('folder name must be letters, digits, ".", "_" or "-"');
+    else if (!ALL_MANIFESTS.some(manifest => existsSync(path.join(pluginDir, manifest)))) {
+      problem(`has no harness manifest (${ALL_MANIFESTS.join(', ')})`);
+    } else if (existsSync(path.join(pluginDir, ANTIGRAVITY.manifestPaths[0]))) {
+      checkPluginManifest(pluginDir, rel, ANTIGRAVITY.manifestPaths, name, 'folder', problem);
+    }
+  }
+  return problems;
+}
+
+/** The whole repo: both catalogs, the plugin folders, and the plugins/ tree scanned once. */
+export function validateRepo(root, options = {}) {
+  const problems = [];
+  for (const harness of Object.keys(HARNESSES)) {
+    const catalog = validateMarketplace(root, harness, options);
+    problems.push(...catalog.map(problem => `${harness}: ${problem}`));
+  }
+  problems.push(...validatePluginFolders(root));
+  const pluginsDir = path.join(root, PLUGINS_DIR);
+  if (existsSync(pluginsDir)) {
     problems.push(...findSecrets(pluginsDir), ...findPackagingProblems(pluginsDir));
   }
   return problems;
@@ -326,20 +392,14 @@ function main() {
     process.exit(1);
   }
   const root = path.resolve(args._[0] ?? '.');
-  const harness =
-    args.harness ??
-    Object.keys(HARNESSES).find(name => existsSync(path.join(root, HARNESSES[name].marketplacePath)));
-  if (!harness) {
-    console.error('No marketplace manifest found; pass --harness=claude|codex.');
-    process.exit(1);
-  }
-  const problems = validateMarketplace(root, harness, { checkRemote: args['check-remote'] });
+  const problems = validateRepo(root, { checkRemote: args['check-remote'] });
   if (problems.length > 0) {
-    console.error(`${problems.length} problem(s) in ${HARNESSES[harness]?.marketplacePath ?? harness}:`);
+    console.error(`${problems.length} problem(s):`);
     for (const problem of problems) console.error(`  - ${problem}`);
     process.exit(1);
   }
-  console.log(`${HARNESSES[harness].marketplacePath}: ok`);
+  for (const target of Object.values(HARNESSES)) console.log(`${target.marketplacePath}: ok`);
+  console.log(`${PLUGINS_DIR}/: ok`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();
