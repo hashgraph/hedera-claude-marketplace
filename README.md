@@ -4,16 +4,19 @@ Hedera plugins for Claude Code, Claude Desktop, Devin, Codex, Codex Desktop, Cha
 Antigravity. The marketplace is named `hedera`. It is open: anyone can propose a plugin with a pull
 request (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-Each harness reads its own catalog and its own plugin folders:
+Each plugin is one folder, `plugins/<name>/`, with a manifest for each harness it supports. Each
+harness reads only its own manifest, and finds the plugin through its own catalog:
 
-| Harness                               | Catalog                                                                | Plugin folders                |
-| ------------------------------------- | ---------------------------------------------------------------------- | ----------------------------- |
-| Claude Code, Claude Desktop, Devin    | [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)   | `plugins/claude/<name>/`      |
-| Codex, Codex Desktop, ChatGPT Desktop | [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) | `plugins/codex/<name>/`       |
-| Antigravity                           | none (Antigravity only reads catalogs Google hosts)                    | `plugins/antigravity/<name>/` |
+| Harness                               | Catalog                                                                | Manifest in `plugins/<name>/`     |
+| ------------------------------------- | ---------------------------------------------------------------------- | --------------------------------- |
+| Claude Code, Claude Desktop, Devin    | [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)   | `.claude-plugin/plugin.json`      |
+| Codex, Codex Desktop, ChatGPT Desktop | [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) | `.codex-plugin/plugin.json`       |
+| Antigravity                           | none (Antigravity only reads catalogs Google hosts)                    | `.antigravity-plugin/plugin.json` |
 
-A plugin can ship for any of the three. The same plugin for two harnesses is two folders, because
-each harness has its own manifest format.
+Files the harnesses share, such as skills and bundled servers, are in the folder once. A file only
+one harness needs gets a name the others ignore: point the Claude and Codex manifests' `mcpServers`
+at their own file (for example `.claude-mcp.json` and `.codex-mcp.json`); Antigravity reads
+`mcp_config.json`.
 
 ## Install
 
@@ -50,10 +53,11 @@ installing once makes the plugin available in all of them.
 
 ### Devin
 
-Devin has no marketplace step. It installs a Claude plugin folder straight from the repository:
+Devin has no marketplace step. It installs a plugin folder straight from the repository, and reads its
+Claude manifest:
 
 ```bash
-devin plugins install hashgraph/hedera-ai-plugins-marketplace#plugins/claude/<plugin>
+devin plugins install hashgraph/hedera-ai-plugins-marketplace#plugins/<plugin>
 ```
 
 ### Antigravity
@@ -61,7 +65,7 @@ devin plugins install hashgraph/hedera-ai-plugins-marketplace#plugins/claude/<pl
 Antigravity has no marketplace step either. It installs a plugin folder from its GitHub URL:
 
 ```bash
-agy plugin install https://github.com/hashgraph/hedera-ai-plugins-marketplace/tree/main/plugins/antigravity/<plugin>
+agy plugin install https://github.com/hashgraph/hedera-ai-plugins-marketplace/tree/main/plugins/<plugin>
 ```
 
 Run the same command again to update. The Antigravity App loads plugins the CLI installed.
@@ -71,8 +75,8 @@ Run the same command again to update. The Antigravity App loads plugins the CLI 
 Claude and Codex plugins are one object each in the `plugins` array of their catalog. An entry
 takes one of two forms. Antigravity plugins have no entry: the folder is the listing.
 
-**1. In-repo.** The plugin's files live in this repository, under `plugins/<harness>/<name>/`, with
-a manifest that has the same `name` and a semver `version`:
+**1. In-repo.** The plugin's files live in this repository, under `plugins/<name>/`, with a
+manifest for each harness, each with the same `name` and a semver `version`:
 
 - Claude: `.claude-plugin/plugin.json`
 - Codex: `.codex-plugin/plugin.json` (or a root `plugin.json`)
@@ -83,7 +87,7 @@ Claude entry:
 ```json
 {
   "name": "my-plugin",
-  "source": "./plugins/claude/my-plugin",
+  "source": "./plugins/my-plugin",
   "description": "What it does."
 }
 ```
@@ -94,7 +98,7 @@ Codex entry:
 {
   "name": "my-plugin",
   "description": "What it does.",
-  "source": { "source": "local", "path": "./plugins/codex/my-plugin" },
+  "source": { "source": "local", "path": "./plugins/my-plugin" },
   "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
   "category": "Developer Tools"
 }
@@ -135,12 +139,13 @@ on the Claude catalog and every Claude plugin folder:
 - Both catalogs are named `hedera`. The Claude one has an owner, the Codex one a display name.
 - Plugin names are valid and unique in each catalog, and every Codex entry has `policy` and
   `category`.
-- An in-repo entry points at `./plugins/<harness>/<name>`, that folder exists, and its manifest has
-  the same `name` and a semver `version`.
-- Every Antigravity folder has a manifest with the folder's name and a semver `version`.
+- An in-repo entry points at `./plugins/<name>`, that folder exists, and its manifest for that
+  harness has the same `name` and a semver `version`.
+- An Antigravity manifest has the folder's name and a semver `version`.
 - A pinned git entry uses `https://` and a full `sha` that can be fetched.
-- `plugins/` holds only `claude/`, `codex/` and `antigravity/`. Every Claude and Codex folder has an
-  entry in its catalog, and no folder holds key material, `.env` files or a keystore.
+- `plugins/` holds only plugin folders, each with at least one harness manifest. A folder with a
+  Claude or Codex manifest has an entry in that catalog, and no folder holds key material, `.env`
+  files or a keystore.
 
 Run it locally with `node scripts/validate-marketplace.mjs . --check-remote`.
 

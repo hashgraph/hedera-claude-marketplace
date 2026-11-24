@@ -7,6 +7,7 @@ import { afterEach, describe, test } from 'node:test';
 import {
   ANTIGRAVITY,
   HARNESSES,
+  PLUGINS_DIR,
   parseArgs,
   validateMarketplace,
   validateRepo,
@@ -31,10 +32,10 @@ const BASE = {
 };
 
 const localEntry = {
-  claude: name => ({ name, source: `./plugins/claude/${name}` }),
+  claude: name => ({ name, source: `./plugins/${name}` }),
   codex: name => ({
     name,
-    source: { source: 'local', path: `./plugins/codex/${name}` },
+    source: { source: 'local', path: `./plugins/${name}` },
     policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
     category: 'Developer Tools',
   }),
@@ -51,7 +52,8 @@ const gitEntry = {
 };
 
 /** Builds a marketplace repo on disk with both catalogs. `plugins` are entries in `harness`'s
- *  catalog (the other one stays empty); `dirs` are plugin folders to create under its folder. */
+ *  catalog (the other one stays empty); `dirs` are plugin folders under plugins/, each with
+ *  `harness`'s manifest. */
 function makeRepo(harness, { plugins = [], dirs = {}, marketplace = {} } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'marketplace-test-'));
   roots.push(root);
@@ -61,7 +63,7 @@ function makeRepo(harness, { plugins = [], dirs = {}, marketplace = {} } = {}) {
   }
   const target = HARNESSES[harness] ?? ANTIGRAVITY;
   for (const [name, version] of Object.entries(dirs)) {
-    write(root, `${target.pluginsDir}/${name}/${target.manifestPaths[0]}`, { name, version });
+    write(root, `${PLUGINS_DIR}/${name}/${target.manifestPaths[0]}`, { name, version });
   }
   return root;
 }
@@ -69,7 +71,8 @@ function makeRepo(harness, { plugins = [], dirs = {}, marketplace = {} } = {}) {
 for (const harness of ['claude', 'codex']) {
   describe(harness, () => {
     const validate = (root, options) => validateRepo(root, options);
-    const dir = `plugins/${harness}`;
+    const dir = PLUGINS_DIR;
+    const manifest = HARNESSES[harness].manifestPaths[0];
 
     test('empty marketplace is valid', () => {
       assert.deepEqual(validate(makeRepo(harness)), []);
@@ -127,10 +130,10 @@ for (const harness of ['claude', 'codex']) {
       assert.match(validate(makeRepo(harness, { plugins: [entry] })).join('\n'), /without "\.\."/);
     });
 
-    test('rejects a local entry whose path is not plugins/<harness>/<name>', () => {
+    test('rejects a local entry whose path is not plugins/<name>', () => {
       const entry = localEntry[harness]('demo');
       if (harness === 'claude') entry.source = './plugins/../x';
-      else entry.source.path = './plugins/demo';
+      else entry.source.path = './plugins/codex/demo';
       const root = makeRepo(harness, { plugins: [entry], dirs: { demo: '1.0.0' } });
       assert.ok(validate(root).join('\n').includes(`local source must be "./${dir}/demo"`));
     });
@@ -164,7 +167,9 @@ for (const harness of ['claude', 'codex']) {
 
     test('rejects an orphan plugin directory', () => {
       const root = makeRepo(harness, { dirs: { orphan: '1.0.0' } });
-      assert.ok(validate(root).join('\n').includes(`${dir}/orphan: directory has no matching local entry`));
+      assert.ok(
+        validate(root).includes(`${harness}: ${dir}/orphan: has ${manifest} but no local entry in the marketplace`),
+      );
     });
 
     test('rejects key material and local state under plugins/', () => {
@@ -233,40 +238,28 @@ for (const harness of ['claude', 'codex']) {
 describe('antigravity', () => {
   const manifest = ANTIGRAVITY.manifestPaths[0];
 
-  test('valid plugin folder', () => {
+  test('valid plugin folder with no catalog entry', () => {
     assert.deepEqual(validateRepo(makeRepo('antigravity', { dirs: { demo: '1.0.0' } })), []);
-  });
-
-  test('rejects a folder without a manifest', () => {
-    const root = makeRepo('claude');
-    write(root, 'plugins/antigravity/demo/skills/a/SKILL.md', '# a');
-    assert.ok(validateRepo(root).includes(`plugins/antigravity/demo has no ${manifest}`));
   });
 
   test('rejects a manifest name that is not the folder name', () => {
     const root = makeRepo('claude');
-    write(root, `plugins/antigravity/demo/${manifest}`, { name: 'other', version: '1.0.0' });
+    write(root, `plugins/demo/${manifest}`, { name: 'other', version: '1.0.0' });
     assert.match(validateRepo(root).join('\n'), /must equal the folder name "demo"/);
   });
 
   test('rejects a missing or non-semver version', () => {
     for (const version of [undefined, 'latest', '1.0']) {
       const root = makeRepo('claude');
-      write(root, `plugins/antigravity/demo/${manifest}`, { name: 'demo', version });
-      assert.match(validateRepo(root).join('\n'), /plugins\/antigravity\/demo: .*semver "version"/);
+      write(root, `plugins/demo/${manifest}`, { name: 'demo', version });
+      assert.match(validateRepo(root).join('\n'), /plugins\/demo: .*semver "version"/);
     }
-  });
-
-  test('rejects a file directly in plugins/antigravity', () => {
-    const root = makeRepo('claude');
-    write(root, 'plugins/antigravity/README.md', '# x');
-    assert.ok(validateRepo(root).includes('plugins/antigravity/README.md: not a plugin folder'));
   });
 
   test('scans its folders for key material once', () => {
     const root = makeRepo('antigravity', { dirs: { demo: '1.0.0' } });
-    write(root, 'plugins/antigravity/demo/.env', 'SECRET=1');
-    assert.deepEqual(validateRepo(root), ['plugins/antigravity/demo/.env: local state or key file']);
+    write(root, 'plugins/demo/.env', 'SECRET=1');
+    assert.deepEqual(validateRepo(root), ['plugins/demo/.env: local state or key file']);
   });
 });
 
@@ -280,25 +273,34 @@ describe('validateRepo', () => {
     }
   });
 
-  test('rejects anything under plugins/ that is not a harness folder', () => {
-    const root = makeRepo('claude');
-    write(root, 'plugins/demo/.claude-plugin/plugin.json', { name: 'demo', version: '1.0.0' });
-    write(root, 'plugins/README.md', '# x');
-    const output = validateRepo(root);
-    const hint = 'not a harness folder; use plugins/claude, plugins/codex or plugins/antigravity';
-    assert.ok(output.includes(`plugins/demo: ${hint}`));
-    assert.ok(output.includes(`plugins/README.md: ${hint}`));
+  test('accepts one folder with all three manifests, listed in both catalogs', () => {
+    const root = makeRepo('claude', { plugins: [localEntry.claude('demo')], dirs: { demo: '1.0.0' } });
+    write(root, HARNESSES.codex.marketplacePath, { ...BASE.codex, plugins: [localEntry.codex('demo')] });
+    write(root, `plugins/demo/${HARNESSES.codex.manifestPaths[0]}`, { name: 'demo', version: '1.0.0' });
+    write(root, `plugins/demo/${ANTIGRAVITY.manifestPaths[0]}`, { name: 'demo', version: '1.0.0' });
+    assert.deepEqual(validateRepo(root), []);
   });
 
-  test('keeps the catalogs apart: a Claude plugin folder needs a Claude entry', () => {
-    const root = makeRepo('codex', {
-      plugins: [localEntry.codex('demo')],
-      dirs: { demo: '1.0.0' },
-    });
-    write(root, 'plugins/claude/demo/.claude-plugin/plugin.json', { name: 'demo', version: '1.0.0' });
+  test('a folder with Claude and Codex manifests must be in both catalogs', () => {
+    const root = makeRepo('codex', { plugins: [localEntry.codex('demo')], dirs: { demo: '1.0.0' } });
+    write(root, 'plugins/demo/.claude-plugin/plugin.json', { name: 'demo', version: '1.0.0' });
     assert.deepEqual(validateRepo(root), [
-      'claude: plugins/claude/demo: directory has no matching local entry in the marketplace',
+      'claude: plugins/demo: has .claude-plugin/plugin.json but no local entry in the marketplace',
     ]);
+  });
+
+  test('rejects a plugin folder with no harness manifest', () => {
+    const root = makeRepo('claude');
+    write(root, 'plugins/demo/skills/a/SKILL.md', '# a');
+    assert.deepEqual(validateRepo(root), [
+      'plugins/demo: has no harness manifest (.claude-plugin/plugin.json, .codex-plugin/plugin.json, plugin.json, .antigravity-plugin/plugin.json)',
+    ]);
+  });
+
+  test('rejects a file directly in plugins/', () => {
+    const root = makeRepo('claude');
+    write(root, 'plugins/README.md', '# x');
+    assert.deepEqual(validateRepo(root), ['plugins/README.md: not a plugin folder']);
   });
 });
 
@@ -331,7 +333,7 @@ describe('codex only', () => {
   });
 
   test('requires policy and category', () => {
-    const entry = { name: 'demo', source: { source: 'local', path: './plugins/codex/demo' } };
+    const entry = { name: 'demo', source: { source: 'local', path: './plugins/demo' } };
     const root = makeRepo('codex', { plugins: [entry], dirs: { demo: '1.0.0' } });
     const output = validateMarketplace(root, 'codex').join('\n');
     assert.match(output, /policy\.installation and policy\.authentication are required/);
@@ -345,7 +347,7 @@ describe('codex only', () => {
 
   test('accepts the root plugin.json as the manifest', () => {
     const root = makeRepo('codex', { plugins: [localEntry.codex('demo')] });
-    write(root, 'plugins/codex/demo/plugin.json', { name: 'demo', version: '2.0.0' });
+    write(root, 'plugins/demo/plugin.json', { name: 'demo', version: '2.0.0' });
     assert.deepEqual(validateMarketplace(root, 'codex'), []);
   });
 });

@@ -19,7 +19,7 @@
 ## Checklist
 
 - [ ] `node scripts/validate-marketplace.mjs .` passes
-- [ ] Claude: `claude plugin validate .` and `claude plugin validate plugins/claude/<name>` pass
+- [ ] Claude: `claude plugin validate .` and `claude plugin validate plugins/<name>` pass
 - [ ] Codex: the plugin installs in Codex from a local marketplace
-- [ ] Antigravity: `agy plugin validate --strict plugins/antigravity/<name>` passes
+- [ ] Antigravity: `agy plugin validate --strict plugins/<name>` passes
 - [ ] Commits are signed off (`git commit -s`)

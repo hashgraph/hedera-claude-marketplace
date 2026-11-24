@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Checks the Hedera plugin marketplace repo: the Claude and Codex catalogs, every plugin entry, the
-// Antigravity plugin folders, and the plugins/ tree. No dependencies.
+// plugin folders, and the plugins/ tree. No dependencies.
 //
 //   node scripts/validate-marketplace.mjs [root] [--check-remote[=true|false]]
 //
-// Plugins live in plugins/<harness>/<name>/. --check-remote also fetches every pinned git commit
-// over https, to prove it exists and is public (needs network and git).
+// A plugin lives in plugins/<name>/, with a manifest for each harness it supports side by side
+// (.claude-plugin/, .codex-plugin/, .antigravity-plugin/); each harness reads only its own.
+// --check-remote also fetches every pinned git commit over https, to prove it exists and is
+// public (needs network and git).
 import { execFileSync } from 'node:child_process';
 import {
   closeSync,
@@ -29,23 +31,23 @@ export const HARNESSES = {
     marketplacePath: '.claude-plugin/marketplace.json',
     manifestPaths: ['.claude-plugin/plugin.json'],
     gitSourceTypes: ['github', 'url', 'git-subdir'],
-    pluginsDir: 'plugins/claude',
   },
   codex: {
     marketplacePath: '.agents/plugins/marketplace.json',
     manifestPaths: ['.codex-plugin/plugin.json', 'plugin.json'],
     gitSourceTypes: ['url', 'git-subdir'],
-    pluginsDir: 'plugins/codex',
   },
 };
 
-/** Antigravity reads no catalog a user can add, so its plugins are folders, installed by URL. */
+/** Antigravity reads no catalog a user can add, so it installs a plugin folder by URL. */
 export const ANTIGRAVITY = {
   manifestPaths: ['.antigravity-plugin/plugin.json'],
-  pluginsDir: 'plugins/antigravity',
 };
 
-const HARNESS_FOLDERS = ['claude', 'codex', 'antigravity'];
+export const PLUGINS_DIR = 'plugins';
+const ALL_MANIFESTS = [
+  ...new Set([...Object.values(HARNESSES), ANTIGRAVITY].flatMap(target => target.manifestPaths)),
+];
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -127,9 +129,9 @@ function findPackagingProblems(pluginsDir) {
     } else if (statSync(file).size >= LFS_POINTER.length && startsWithLfsPointer(file)) {
       problems.push(`plugins/${rel}: is a Git LFS pointer, commit the real file instead`);
     }
-    // A plugin's root is plugins/<harness>/<name>; a file higher up is reported elsewhere.
-    if (rel.endsWith('.node') && rel.split('/').length > 2) {
-      const plugin = rel.split('/').slice(0, 2).join('/');
+    // A plugin's root is plugins/<name>; a file directly in plugins/ is reported elsewhere.
+    if (rel.endsWith('.node') && rel.split('/').length > 1) {
+      const plugin = rel.split('/')[0];
       nativeByPlugin.set(plugin, (nativeByPlugin.get(plugin) ?? 0) + 1);
     }
   }
@@ -190,12 +192,12 @@ function checkRemoteCommit(url, sha) {
 function checkLocalEntry(root, entry, harness, problem) {
   const { source } = entry;
   const declared = typeof source === 'string' ? source : source.path;
-  const expected = `./${HARNESSES[harness].pluginsDir}/${entry.name}`;
+  const expected = `./${PLUGINS_DIR}/${entry.name}`;
   if (declared !== expected) {
     problem(`local source must be "${expected}", got ${JSON.stringify(declared)}`);
     return;
   }
-  const pluginDir = path.join(root, HARNESSES[harness].pluginsDir, entry.name);
+  const pluginDir = path.join(root, PLUGINS_DIR, entry.name);
   if (!existsSync(pluginDir) || !statSync(pluginDir).isDirectory()) {
     problem(`${expected} does not exist`);
     return;
@@ -229,6 +231,15 @@ function checkPluginManifest(pluginDir, label, manifestPaths, name, nameFrom, pr
       `${manifestPath} needs a semver "version" (users only get updates when it changes), got ${JSON.stringify(manifest.version)}`,
     );
   }
+}
+
+/** Plugin folder names under plugins/ (directories only; validatePluginFolders reports the rest). */
+function pluginFolders(root) {
+  const dir = path.join(root, PLUGINS_DIR);
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+  return readdirSync(dir)
+    .sort()
+    .filter(name => statSync(path.join(dir, name)).isDirectory());
 }
 
 /** Returns a list of problems with one catalog; empty means it is valid. The plugins/ tree scans
@@ -307,57 +318,51 @@ export function validateMarketplace(root, harness, { checkRemote = false } = {})
     }
   });
 
-  const harnessDir = path.join(root, target.pluginsDir);
-  if (existsSync(harnessDir) && statSync(harnessDir).isDirectory()) {
-    for (const name of readdirSync(harnessDir).sort()) {
-      const rel = `${target.pluginsDir}/${name}`;
-      if (!statSync(path.join(harnessDir, name)).isDirectory()) {
-        problems.push(`${rel}: not a plugin folder`);
-      } else if (!localNames.has(name)) {
-        problems.push(`${rel}: directory has no matching local entry in the marketplace`);
-      }
+  // A folder carrying this harness's manifest is a plugin for it, so it must be listed here.
+  for (const name of pluginFolders(root)) {
+    const manifest = target.manifestPaths.find(rel =>
+      existsSync(path.join(root, PLUGINS_DIR, name, rel)),
+    );
+    if (manifest && !localNames.has(name)) {
+      problems.push(`${PLUGINS_DIR}/${name}: has ${manifest} but no local entry in the marketplace`);
     }
   }
   return problems;
 }
 
-/** Antigravity plugin folders: each has a manifest whose name is the folder's. */
-function validateAntigravity(root) {
+/** Every entry in plugins/ is a plugin folder with at least one harness manifest. Antigravity has
+ *  no catalog, so its manifest is checked here: its name must be the folder's. */
+function validatePluginFolders(root) {
   const problems = [];
-  const harnessDir = path.join(root, ANTIGRAVITY.pluginsDir);
-  if (!existsSync(harnessDir) || !statSync(harnessDir).isDirectory()) return problems;
-  for (const name of readdirSync(harnessDir).sort()) {
-    const rel = `${ANTIGRAVITY.pluginsDir}/${name}`;
+  const dir = path.join(root, PLUGINS_DIR);
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return problems;
+  for (const name of readdirSync(dir).sort()) {
+    const rel = `${PLUGINS_DIR}/${name}`;
     // Messages that already name the folder keep it once.
     const problem = message =>
       problems.push(message.startsWith(rel) ? message : `${rel}: ${message}`);
-    if (!statSync(path.join(harnessDir, name)).isDirectory()) problem('not a plugin folder');
+    const pluginDir = path.join(dir, name);
+    if (!statSync(pluginDir).isDirectory()) problem('not a plugin folder');
     else if (!NAME.test(name)) problem('folder name must be letters, digits, ".", "_" or "-"');
-    else {
-      const pluginDir = path.join(harnessDir, name);
+    else if (!ALL_MANIFESTS.some(manifest => existsSync(path.join(pluginDir, manifest)))) {
+      problem(`has no harness manifest (${ALL_MANIFESTS.join(', ')})`);
+    } else if (existsSync(path.join(pluginDir, ANTIGRAVITY.manifestPaths[0]))) {
       checkPluginManifest(pluginDir, rel, ANTIGRAVITY.manifestPaths, name, 'folder', problem);
     }
   }
   return problems;
 }
 
-/** The whole repo: both catalogs, the Antigravity folders, and the plugins/ tree scanned once. */
+/** The whole repo: both catalogs, the plugin folders, and the plugins/ tree scanned once. */
 export function validateRepo(root, options = {}) {
   const problems = [];
   for (const harness of Object.keys(HARNESSES)) {
     const catalog = validateMarketplace(root, harness, options);
     problems.push(...catalog.map(problem => `${harness}: ${problem}`));
   }
-  problems.push(...validateAntigravity(root));
-  const pluginsDir = path.join(root, 'plugins');
+  problems.push(...validatePluginFolders(root));
+  const pluginsDir = path.join(root, PLUGINS_DIR);
   if (existsSync(pluginsDir)) {
-    for (const name of readdirSync(pluginsDir).sort()) {
-      if (!HARNESS_FOLDERS.includes(name) || !statSync(path.join(pluginsDir, name)).isDirectory()) {
-        problems.push(
-          `plugins/${name}: not a harness folder; use plugins/claude, plugins/codex or plugins/antigravity`,
-        );
-      }
-    }
     problems.push(...findSecrets(pluginsDir), ...findPackagingProblems(pluginsDir));
   }
   return problems;
@@ -394,7 +399,7 @@ function main() {
     process.exit(1);
   }
   for (const target of Object.values(HARNESSES)) console.log(`${target.marketplacePath}: ok`);
-  console.log(`${ANTIGRAVITY.pluginsDir}: ok`);
+  console.log(`${PLUGINS_DIR}/: ok`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();

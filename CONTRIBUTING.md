@@ -4,9 +4,9 @@ Anyone can propose a plugin by pull request. Maintainers review every one (see
 [CODEOWNERS](.github/CODEOWNERS)). The README explains the layout and the two forms an entry can
 take; this page is the checklist.
 
-A plugin can ship for any of the harnesses: Claude (also Devin), Codex, Antigravity. Each build is
-a folder of its own under `plugins/<harness>/<name>/`, with that harness's manifest. Use the same
-`<name>` in all of them.
+A plugin can ship for any of the harnesses: Claude (also Devin), Codex, Antigravity. It is one
+folder, `plugins/<name>/`, with a manifest for each harness it supports. Use the same `<name>` in
+all of them.
 
 ## Before you open a PR
 
@@ -20,17 +20,22 @@ a folder of its own under `plugins/<harness>/<name>/`, with that harness's manif
 ## Form 1: add the plugin to this repository
 
 1. Fork the repository and create a branch.
-2. Copy each build of the plugin to its folder. Its manifest must have `"name": "<name>"` and a
-   semver `"version"`:
-   - Claude: `plugins/claude/<name>/`, with `.claude-plugin/plugin.json`.
-   - Codex: `plugins/codex/<name>/`, with `.codex-plugin/plugin.json` (or a root `plugin.json`).
-   - Antigravity: `plugins/antigravity/<name>/`, with `.antigravity-plugin/plugin.json`.
-3. List the Claude and Codex builds in their catalogs. Antigravity has no catalog; its folder is
-   enough.
+2. Copy the plugin to `plugins/<name>/`, with a manifest for each harness. Each must have
+   `"name": "<name>"` and a semver `"version"`:
+   - Claude: `.claude-plugin/plugin.json`.
+   - Codex: `.codex-plugin/plugin.json` (or a root `plugin.json`).
+   - Antigravity: `.antigravity-plugin/plugin.json`.
+
+   Keep shared files (skills, servers) once. When the harnesses need different MCP configs, point
+   the Claude and Codex manifests' `mcpServers` at their own files; Antigravity reads
+   `mcp_config.json`.
+
+3. List the plugin in the Claude and Codex catalogs, if it has those manifests. Antigravity has no
+   catalog; its manifest is enough.
    - Claude: add one object to `plugins` in `.claude-plugin/marketplace.json`:
-     `{ "name": "<name>", "source": "./plugins/claude/<name>", "description": "…" }`.
+     `{ "name": "<name>", "source": "./plugins/<name>", "description": "…" }`.
    - Codex: add one object to `plugins` in `.agents/plugins/marketplace.json`, with `source` set to
-     `{ "source": "local", "path": "./plugins/codex/<name>" }`, plus `policy` (for example
+     `{ "source": "local", "path": "./plugins/<name>" }`, plus `policy` (for example
      `{ "installation": "AVAILABLE", "authentication": "ON_INSTALL" }`) and `category`.
 4. Run `node scripts/validate-marketplace.mjs .` and `claude plugin validate .`.
 
@@ -56,7 +61,7 @@ Some plugins commit their built dependencies, including native `*.node` librarie
 
 - Do not ignore `plugins/**/node_modules/` in any `.gitignore`.
 - Do not use Git LFS. Clones do not download LFS files, so users would get pointer files.
-- Put one `THIRD_PARTY_NOTICES` file at the root of each plugin folder (`plugins/<harness>/<name>/`).
+- Put one `THIRD_PARTY_NOTICES` file at the root of each plugin folder (`plugins/<name>/`).
   It must cover every bundled package's licence, the compiled libraries inside the `.node` files,
   and any third-party JS you bundled.
 - Reviewers cannot read binaries (the diff only says "Binary files differ"). In the PR description,

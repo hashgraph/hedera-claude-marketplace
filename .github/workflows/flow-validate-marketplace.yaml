@@ -51,7 +51,7 @@ jobs:
         run: |
           claude_validate() { npx --yes "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" plugin validate "$@"; }
           claude_validate .
-          for dir in plugins/claude/*/; do
-            [ -d "$dir" ] || continue
+          for dir in plugins/*/; do
+            [ -f "${dir}.claude-plugin/plugin.json" ] || continue
             claude_validate "$dir"
           done
