@@ -93,8 +93,9 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
 The job summary lists what each changed plugin runs: MCP and LSP servers, hooks (commands and
 prompts), monitors, `bin/` files, scripts named in skills and HTML comments in Markdown. It
 highlights a new plugin named `hedera-`, `hashgraph-` or `hiero-`, a changed source on an existing
-entry, and a remote MCP server on a host the marketplace doesn't already use. These don't fail the
-run; reviewers check them.
+entry, a new or re-pointed git entry whose owner isn't `hashgraph` or `hiero-ledger`, and a remote
+MCP server on a host the marketplace doesn't already use. These don't fail the run; reviewers check
+them.
 
 Run it locally with `node scripts/validate-marketplace.mjs . --check-remote --base=origin/main`.
 

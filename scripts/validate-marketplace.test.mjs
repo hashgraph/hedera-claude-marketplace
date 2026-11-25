@@ -685,6 +685,29 @@ for (const harness of ['claude', 'codex']) {
         );
       });
 
+      test('highlights a new or re-pointed git entry whose owner is not a Hedera org', () => {
+        const source = repo => ({ source: 'url', url: `https://github.com/${repo}.git`, ref: REF, sha: SHA });
+        const root = makeRepo(harness, {
+          plugins: [gitEntry[harness]('kept', source('acme/kept')), gitEntry[harness]('moved', source('hashgraph/moved'))],
+        });
+        assert.match(inspect(root).summary, /^> - `kept` comes from `acme\/kept`, which is not a Hedera GitHub org$/m);
+        commitAll(root);
+        write(root, HARNESSES[harness].marketplacePath, {
+          ...BASE[harness],
+          plugins: [
+            gitEntry[harness]('kept', source('acme/kept')),
+            gitEntry[harness]('moved', source('hashgraph-mirror/moved')),
+            gitEntry[harness]('added', source('acme/added')),
+            gitEntry[harness]('official', source('Hashgraph/official')),
+          ],
+        });
+        const { problems, summary } = inspect(root, { base: 'HEAD' });
+        assert.deepEqual(problems, []);
+        assert.match(summary, /^> - `moved` comes from `hashgraph-mirror\/moved`, which is not a Hedera GitHub org$/m);
+        assert.match(summary, /^> - `added` comes from `acme\/added`, which is not a Hedera GitHub org$/m);
+        assert.doesNotMatch(summary, /`(kept|official)` comes from/);
+      });
+
       test('an earlier marketplace or plugin manifest that is not a JSON object does not crash', () => {
         const root = committed();
         write(root, HARNESSES[harness].marketplacePath, 'null\n');

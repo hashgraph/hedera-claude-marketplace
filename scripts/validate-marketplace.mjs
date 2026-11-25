@@ -598,7 +598,8 @@ function checkCodexEntry(entry, problem) {
 
 /**
  * Collects every problem. Also fills `seen` with what later checks need: the parsed marketplace,
- * the in-repo plugins whose manifest could be read, and the files under plugins/.
+ * the in-repo plugins whose manifest could be read, the valid git entries, and the files under
+ * plugins/.
  */
 function collectProblems(root, harness, checkRemote, seen) {
   const target = Object.hasOwn(HARNESSES, harness) ? HARNESSES[harness] : undefined;
@@ -682,6 +683,7 @@ function collectProblems(root, harness, checkRemote, seen) {
       return problem('git sources must set "ref" to the tag of the pinned commit, like "v1.2.0"');
     }
     remote.push({ url: git.url, ref: source.ref, sha: source.sha, problem });
+    seen.git.push({ name: entry.name, owner, repo: new URL(git.url).pathname.slice(1).replace(/\.git$/, '') });
   });
 
   if (checkRemote && remote.length > MAX_REMOTE_CHECKS) {
@@ -996,10 +998,12 @@ function compareWithBase(root, harness, base, { marketplace, local }) {
     new Map((Array.isArray(list) ? list : []).filter(entry => isObject(entry) && typeof entry.name === 'string').map(entry => [entry.name, entry]));
   const before = byName(baseMarketplace?.plugins);
   const after = byName(marketplace.plugins);
+  const sourceChanged = new Set();
 
   for (const [name, entry] of after) {
     const old = before.get(name);
     if (!old) {
+      sourceChanged.add(name);
       changes.push(`New plugin ${code(name)}`);
       if (OFFICIAL_PREFIX.test(name)) {
         highlights.push(`New plugin ${code(name)} has a name that reads as published by Hedera`);
@@ -1007,7 +1011,10 @@ function compareWithBase(root, harness, base, { marketplace, local }) {
       continue;
     }
     const sourceDiff = fieldChanges(sourceFields(old.source), sourceFields(entry.source), SOURCE_FIELDS);
-    if (sourceDiff.length > 0) highlights.push(`${code(name)} source changed: ${sourceDiff.join(', ')}`);
+    if (sourceDiff.length > 0) {
+      sourceChanged.add(name);
+      highlights.push(`${code(name)} source changed: ${sourceDiff.join(', ')}`);
+    }
     if (harness === 'codex') {
       const [oldPolicy, newPolicy] = [old.policy, entry.policy].map(policy => (isObject(policy) ? policy : {}));
       const keys = [...new Set([...Object.keys(oldPolicy), ...Object.keys(newPolicy)])].sort();
@@ -1037,7 +1044,7 @@ function compareWithBase(root, harness, base, { marketplace, local }) {
     else if (order < 0) problems.push(`plugins/${name}: version went down from ${baseVersion} in ${base} to ${version}`);
     else problems.push(`plugins/${name}: files changed since ${base}, so "version" must be greater than ${baseVersion}`);
   }
-  return { problems, highlights, changes, changed };
+  return { problems, highlights, changes, changed, sourceChanged };
 }
 
 function renderPlugin({ name, version, mcp, lsp, hooks, monitors, bin, apps, scripts, comments }) {
@@ -1079,8 +1086,13 @@ function renderPlugin({ name, version, mcp, lsp, hooks, monitors, bin, apps, scr
 }
 
 /** The Markdown summary for reviewers. It never fails the run: failures are problems. */
-function renderSummary(base, diff, plugins) {
+function renderSummary(base, diff, plugins, git) {
   const highlights = [...(diff?.highlights ?? [])];
+  // With a base, only new and re-pointed entries; the rest were checked when they changed.
+  for (const { name, owner, repo } of git) {
+    if (KNOWN_GIT_OWNERS.includes(owner.toLowerCase()) || !(diff?.sourceChanged?.has(name) ?? true)) continue;
+    highlights.push(`${code(name)} comes from ${code(repo)}, which is not a Hedera GitHub org`);
+  }
   for (const { name, mcp } of plugins) {
     for (const { server, config } of mcp) {
       if (typeof config.url !== 'string') continue;
@@ -1113,14 +1125,14 @@ function renderSummary(base, diff, plugins) {
  * from every problem, since parts of them come from the checked repo.
  */
 export function inspectMarketplace(root, harness, { checkRemote = false, base } = {}) {
-  const seen = { marketplace: undefined, local: [], files: [] };
+  const seen = { marketplace: undefined, local: [], git: [], files: [] };
   const problems = collectProblems(root, harness, checkRemote, seen);
   const plugins = seen.local.map(plugin => readCapabilities(root, plugin, seen.files));
   for (const plugin of plugins) problems.push(...plugin.problems);
   const diff = base !== undefined && seen.marketplace ? compareWithBase(root, harness, base, seen) : undefined;
   if (diff) problems.push(...diff.problems);
   const listed = diff?.changed ? plugins.filter(({ name }) => diff.changed.has(name)) : plugins;
-  return { problems: problems.map(stripControl), summary: renderSummary(base, diff, listed) };
+  return { problems: problems.map(stripControl), summary: renderSummary(base, diff, listed, seen.git) };
 }
 
 /** Returns a list of problems; empty means the marketplace is valid. */
