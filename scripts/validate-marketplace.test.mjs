@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, afterEach, before, describe, test } from 'node:test';
@@ -413,6 +413,15 @@ for (const harness of ['claude', 'codex']) {
       mkdirSync(path.join(root, 'plugins/demo/many'));
       for (let i = 0; i < MAX_FILES; i++) writeFileSync(path.join(root, `plugins/demo/many/${i}`), '');
       assert.match(validate(root).join('\n'), new RegExp(`plugins/: has more than ${MAX_FILES} files`));
+    });
+
+    test('caps the size of the marketplace and plugin manifests before parsing them', () => {
+      const root = makeRepo(harness, { plugins: [localEntry[harness]('demo')], dirs: { demo: '1.0.0' } });
+      const manifest = `plugins/demo/${HARNESSES[harness].manifestPaths[0]}`;
+      truncateSync(path.join(root, manifest), MAX_FILE_BYTES + 1);
+      assert.match(validate(root).join('\n'), new RegExp(`\\./${manifest.replaceAll('.', '\\.')} is larger than 16 MB`));
+      truncateSync(path.join(root, HARNESSES[harness].marketplacePath), MAX_FILE_BYTES + 1);
+      assert.deepEqual(validate(root), [`${HARNESSES[harness].marketplacePath} is larger than 16 MB`]);
     });
 
     test('rejects invisible Unicode in text files under plugins/', () => {
