@@ -115,12 +115,16 @@ const DENIED_COMMANDS = [
 ];
 // A download saved to a file can be run by a later command or hook, so saving one fails too.
 const DOWNLOAD_COMMAND = /(?:^|[\s/"'(`])(curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)(?=$|[\s"'])/i;
-const CURL_TO_FILE = /^(-[A-Za-z0-9#:]*[oO]|--(output|output-dir|remote-name|remote-name-all)(=|$))/;
-const WGET_TO_STDOUT = /^(-[A-Za-z]*O-|--output-document=-|--spider)$/;
-const WGET_OUTPUT = /^(-[A-Za-z]*O|--output-document)$/;
+// Short options that take a value, which may be attached (-XPOST, -qO-), and the one naming the
+// output file.
+const DOWNLOAD_OPTIONS = {
+  curl: { withValue: 'AbcCdDeEFHKmoPQrtTuUwxXyYz', output: 'o', outputLong: 'output' },
+  wget: { withValue: 'aBeilnoOPQtTUwADIRX', output: 'O', outputLong: 'output-document' },
+};
+const NOT_A_FILE = new Set(['-', '/dev/null']);
 const POWERSHELL_OUT_FILE = /^-OutF/i;
-const REDIRECT = /(\d*)&?>>?\s*(&?)([^\s;&|]*)/g;
-const PLUGIN_ROOT_VAR =/^(\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT)(?=\/|$)/;
+const REDIRECT = /(\d*)&?>[>|]?\s*(&?)([^\s;&|]*)/g;
+const PLUGIN_ROOT_VAR = /^(\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT)(?=\/|$)/;
 const HOME_PATH = /^(~|\$HOME\b|\$\{HOME\})/;
 const SKILL_SCRIPT = /[^\s`'"()<>[\]*]*\/[^\s`'"()<>[\]*]*\.(sh|bash|zsh|py|mjs|cjs|js|ts|rb|pl|ps1)(?![\w-]|\.\w)/g;
 const MARKDOWN_FILE = /\.(md|mdx|markdown)$/i;
@@ -778,12 +782,45 @@ function findOutsidePath(text) {
 }
 
 /**
+ * Whether curl or wget arguments save the download to a file: curl -o or -O, wget unless its last
+ * -O is - or /dev/null or it runs with --spider.
+ */
+function savesToFile(tool, args) {
+  const { withValue, output, outputLong } = DOWNLOAD_OPTIONS[tool];
+  let saves = tool === 'wget';
+  let spider = false;
+  const setOutput = value => {
+    saves = (tool === 'curl' && saves) || !NOT_A_FILE.has(value);
+  };
+  for (let i = 0; i < args.length; i++) {
+    const long = /^--([\w-]+)(?:=(.*))?$/.exec(args[i]);
+    if (long) {
+      const [, name, attached] = long;
+      if (name === outputLong) setOutput(attached ?? args[++i]);
+      if (tool === 'curl' && /^(output-dir|remote-name|remote-name-all)$/.test(name)) saves = true;
+      if (tool === 'wget' && name === 'spider') spider = true;
+      continue;
+    }
+    if (!/^-[^-]/.test(args[i])) continue;
+    for (let j = 1; j < args[i].length; j++) {
+      const option = args[i][j];
+      if (tool === 'curl' && option === 'O') saves = true;
+      if (!withValue.includes(option)) continue;
+      const value = args[i].slice(j + 1) || args[++i];
+      if (option === output) setOutput(value);
+      break;
+    }
+  }
+  return saves && !spider;
+}
+
+/**
  * Whether a command saves a download to a file: curl -o/-O/--output, wget without -O -, PowerShell
- * -OutFile, or a > redirect or tee after the download in the same pipeline.
+ * -OutFile, or a > redirect, tee, Out-File or Set-Content after the download in the same pipeline.
  */
 function downloadsToFile(text) {
-  for (const pipeline of text.split(/\|\||&&|[;\n]|(?<![>&])&(?![>&])/)) {
-    const stages = pipeline.split('|');
+  for (const pipeline of text.replace(/\\\n/g, ' ').split(/\|\||&&|[;\n]|(?<![>&])&(?![>&])/)) {
+    const stages = pipeline.split(/(?<!>)\|/);
     const first = stages.findIndex(stage => DOWNLOAD_COMMAND.test(stage));
     if (first < 0) continue;
     const match = DOWNLOAD_COMMAND.exec(stages[first]);
@@ -793,13 +830,9 @@ function downloadsToFile(text) {
       .split(/\s+/)
       .map(arg => arg.replace(/^["']|["']$/g, ''))
       .filter(Boolean);
-    if (tool === 'curl' && args.some(arg => CURL_TO_FILE.test(arg))) return true;
-    if (tool === 'wget' && !args.some((arg, i) => WGET_TO_STDOUT.test(arg) || (WGET_OUTPUT.test(arg) && args[i + 1] === '-'))) {
-      return true;
-    }
-    if (tool !== 'curl' && tool !== 'wget' && args.some(arg => POWERSHELL_OUT_FILE.test(arg))) return true;
+    if (DOWNLOAD_OPTIONS[tool] ? savesToFile(tool, args) : args.some(arg => POWERSHELL_OUT_FILE.test(arg))) return true;
     for (const stage of stages.slice(first)) {
-      if (/^\s*(\S*\/)?tee(\s|$)/.test(stage)) return true;
+      if (/^\s*(\S*\/)?(tee|Out-File|Set-Content)(\s|$)/i.test(stage)) return true;
       for (const [, fd, duplicate, target] of stage.matchAll(REDIRECT)) {
         if ((fd === '' || fd === '1') && duplicate === '' && target !== '' && target !== '/dev/null') return true;
       }
@@ -808,7 +841,10 @@ function downloadsToFile(text) {
   return false;
 }
 
-/** Problems with one hook or MCP command line: the denylist, then paths outside the plugin. */
+/**
+ * Problems with one hook or MCP command line: the denylist, a download saved to a file, then paths
+ * outside the plugin.
+ */
 function checkCommand(at, text) {
   const problems = DENIED_COMMANDS.filter(([pattern]) => pattern.test(text)).map(([, what]) => `${at} ${what}`);
   if (downloadsToFile(text)) problems.push(`${at} saves downloaded content to a file`);
