@@ -56,6 +56,8 @@ CI rejects a hook, MCP server, LSP server or monitor command that:
 
 - pipes downloaded content to a shell or interpreter (`curl … | sh`, `wget … | python3`)
 - runs downloaded content through `$(curl …)`, backticks or `<(curl …)`
+- saves downloaded content to a file (`curl -o`, `wget` without `-O -`, `-OutFile`, `> file`,
+  `| tee`), since a later command or hook could run it
 - pipes base64-decoded content to a shell or interpreter (`base64 -d … | sh`)
 - uses `sudo`
 - uses an absolute path, a path under `~` or `$HOME`, or a relative path that leaves the plugin

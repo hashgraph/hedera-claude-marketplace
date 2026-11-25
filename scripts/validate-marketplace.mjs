@@ -113,7 +113,14 @@ const DENIED_COMMANDS = [
   [new RegExp(String.raw`\bbase64\s+(-[A-Za-z]*[dD][A-Za-z]*|--decode)\b.*${SHELL}`, 's'), 'pipes base64-decoded content to a shell or interpreter'],
   [/\bsudo\b/, 'runs sudo'],
 ];
-const PLUGIN_ROOT_VAR = /^(\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT)(?=\/|$)/;
+// A download saved to a file can be run by a later command or hook, so saving one fails too.
+const DOWNLOAD_COMMAND = /(?:^|[\s/"'(`])(curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)(?=$|[\s"'])/i;
+const CURL_TO_FILE = /^(-[A-Za-z0-9#:]*[oO]|--(output|output-dir|remote-name|remote-name-all)(=|$))/;
+const WGET_TO_STDOUT = /^(-[A-Za-z]*O-|--output-document=-|--spider)$/;
+const WGET_OUTPUT = /^(-[A-Za-z]*O|--output-document)$/;
+const POWERSHELL_OUT_FILE = /^-OutF/i;
+const REDIRECT = /(\d*)&?>>?\s*(&?)([^\s;&|]*)/g;
+const PLUGIN_ROOT_VAR =/^(\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT)(?=\/|$)/;
 const HOME_PATH = /^(~|\$HOME\b|\$\{HOME\})/;
 const SKILL_SCRIPT = /[^\s`'"()<>[\]*]*\/[^\s`'"()<>[\]*]*\.(sh|bash|zsh|py|mjs|cjs|js|ts|rb|pl|ps1)(?![\w-]|\.\w)/g;
 const MARKDOWN_FILE = /\.(md|mdx|markdown)$/i;
@@ -768,9 +775,41 @@ function findOutsidePath(text) {
   return undefined;
 }
 
+/**
+ * Whether a command saves a download to a file: curl -o/-O/--output, wget without -O -, PowerShell
+ * -OutFile, or a > redirect or tee after the download in the same pipeline.
+ */
+function downloadsToFile(text) {
+  for (const pipeline of text.split(/\|\||&&|[;\n]|(?<![>&])&(?![>&])/)) {
+    const stages = pipeline.split('|');
+    const first = stages.findIndex(stage => DOWNLOAD_COMMAND.test(stage));
+    if (first < 0) continue;
+    const match = DOWNLOAD_COMMAND.exec(stages[first]);
+    const tool = match[1].toLowerCase();
+    const args = stages[first]
+      .slice(match.index + match[0].length)
+      .split(/\s+/)
+      .map(arg => arg.replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+    if (tool === 'curl' && args.some(arg => CURL_TO_FILE.test(arg))) return true;
+    if (tool === 'wget' && !args.some((arg, i) => WGET_TO_STDOUT.test(arg) || (WGET_OUTPUT.test(arg) && args[i + 1] === '-'))) {
+      return true;
+    }
+    if (tool !== 'curl' && tool !== 'wget' && args.some(arg => POWERSHELL_OUT_FILE.test(arg))) return true;
+    for (const stage of stages.slice(first)) {
+      if (/^\s*(\S*\/)?tee(\s|$)/.test(stage)) return true;
+      for (const [, fd, duplicate, target] of stage.matchAll(REDIRECT)) {
+        if ((fd === '' || fd === '1') && duplicate === '' && target !== '' && target !== '/dev/null') return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Problems with one hook or MCP command line: the denylist, then paths outside the plugin. */
 function checkCommand(at, text) {
   const problems = DENIED_COMMANDS.filter(([pattern]) => pattern.test(text)).map(([, what]) => `${at} ${what}`);
+  if (downloadsToFile(text)) problems.push(`${at} saves downloaded content to a file`);
   const outside = findOutsidePath(text);
   if (outside) problems.push(`${at} uses a path outside the plugin root: ${outside}`);
   return problems;
