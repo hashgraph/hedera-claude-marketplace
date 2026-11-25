@@ -68,10 +68,17 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
 `scripts/validate-marketplace.mjs` runs on every pull request, together with `claude plugin validate`:
 
 - The marketplace is named `hedera` and has an owner.
-- Plugin names are valid and unique.
+- Plugin names are lowercase kebab-case, at most 64 characters, unique, and not reserved (such as
+  `node_modules`).
+- Entries carry only listing fields: `name`, `source`, `description`, `version`, `author`,
+  `homepage`, `repository`, `license`, `keywords`, `category`, `tags` and `displayName`. Hooks,
+  MCP servers, skills and other components go in the plugin's own files, where CI checks them.
 - An in-repo entry points at `./plugins/<name>`, that folder exists, and its `plugin.json` has the
   same `name` and a semver `version`.
-- A pinned git entry uses `https://` and a full `sha` that can be fetched.
+- Files under `plugins/` include no symlinks, submodules, `.gitattributes` drivers or invisible
+  Unicode characters, and none is over 16 MB.
+- A pinned git entry uses an `https://github.com/<owner>/<repo>` URL, a relative `path` and a
+  full `sha` that can be fetched.
 - Every folder in `plugins/` has an entry, and no folder holds key material, `.env` files or a
   keystore.
 
