@@ -96,10 +96,15 @@ const stripControl = value => String(value).replace(/[\x00-\x1f\x7f]/g, '');
 const codePoint = char => `U+${char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
-/** Parses a JSON file that must be a regular file (not a symlink). Returns { value } or { error }. */
+/**
+ * Parses a JSON file that must be a regular file (not a symlink) of at most MAX_FILE_BYTES.
+ * Returns { value } or { error }.
+ */
 function readJson(file, rel) {
   try {
-    if (!lstatSync(file).isFile()) return { error: `${rel} must be a regular file` };
+    const stats = lstatSync(file);
+    if (!stats.isFile()) return { error: `${rel} must be a regular file` };
+    if (stats.size > MAX_FILE_BYTES) return { error: `${rel} is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB` };
     return { value: JSON.parse(readFileSync(file, 'utf8')) };
   } catch (error) {
     if (error instanceof SyntaxError) return { error: `${rel} is not valid JSON (${error.message})` };
