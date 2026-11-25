@@ -77,15 +77,27 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
 - An in-repo entry points at `./plugins/<name>`, that folder exists, and its `plugin.json` has the
   same `name` and a semver `version`.
 - Files under `plugins/` include no symlinks, submodules, `.gitattributes` drivers or invisible
-  Unicode characters, and none is over 16 MB.
+  Unicode characters, and none is over 16 MB. The root `.gitattributes` sets no drivers either.
 - A pinned git entry uses an `https://github.com/<owner>/<repo>` URL, a relative `path`, a tag
   `ref` and a full `sha`. With `--check-remote`, the tag must resolve to exactly that commit in the
   upstream repository. An `<owner>` that imitates `hashgraph` or `hiero-ledger` (such as
   `hashgraaph` or `hiero-1edger`) fails.
 - Every folder in `plugins/` has an entry, and no folder holds key material, `.env` files or a
   keystore.
+- On a pull request (`--base=origin/main`), an in-repo plugin whose files changed must raise its
+  `version` in semver order, so a version never goes down.
+- Hook, MCP server, LSP server and monitor commands don't run downloaded or base64-decoded content
+  in a shell or interpreter, don't save downloaded content to a file, don't use `sudo`, and use no
+  path outside the plugin (see the plugin security policy in [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-Run it locally with `node scripts/validate-marketplace.mjs . --check-remote`.
+The job summary lists what each changed plugin runs: MCP and LSP servers, hooks (commands and
+prompts), monitors, `bin/` files, scripts named in skills and HTML comments in Markdown. It
+highlights a new plugin named `hedera-`, `hashgraph-` or `hiero-`, a changed source on an existing
+entry, a new or re-pointed git entry whose owner isn't `hashgraph` or `hiero-ledger`, and a remote
+MCP server on a host the marketplace doesn't already use. These don't fail the run; reviewers check
+them.
+
+Run it locally with `node scripts/validate-marketplace.mjs . --check-remote --base=origin/main`.
 
 ## Review
 
