@@ -52,6 +52,8 @@ const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const MAX_NAME_LENGTH = 64;
 const RESERVED_NAMES = new Set(['node_modules', 'plugins', 'scripts', '.claude-plugin', '.codex-plugin']);
 const REPO_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** GitHub accounts that publish Hedera's own plugins. A git source owner that imitates one fails. */
+const KNOWN_GIT_OWNERS = ['hashgraph', 'hiero-ledger'];
 const SHA = /^[0-9a-f]{40}$/;
 const TAG_NAME = /^[A-Za-z0-9._@+-]+(\/[A-Za-z0-9._@+-]+)*$/;
 const SEMVER =
@@ -350,6 +352,32 @@ function isTagName(value) {
   );
 }
 
+/** An owner name with case and separators dropped and characters that read alike merged. */
+const foldOwner = owner =>
+  owner.toLowerCase().replace(/[-_.]/g, '').replace(/rn/g, 'm').replace(/vv/g, 'w').replace(/0/g, 'o').replace(/[1i]/g, 'l');
+
+/** Edit distance with adjacent swaps (optimal string alignment). */
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/**
+ * The known owner that `owner` imitates (the same once folded, or at most two edits away), or
+ * undefined. GitHub owner names are case-insensitive, so a known owner in another case is itself.
+ */
+function imitatedOwner(owner) {
+  if (KNOWN_GIT_OWNERS.includes(owner.toLowerCase())) return undefined;
+  return KNOWN_GIT_OWNERS.find(known => editDistance(foldOwner(owner), foldOwner(known)) <= 2);
+}
+
 /** The plugin's git source as { url, path? }, or an error string. */
 function gitSource(source, harness) {
   const allowed = HARNESSES[harness].gitSourceTypes;
@@ -579,6 +607,9 @@ function collectProblems(root, harness, checkRemote) {
 
     const git = gitSource(source, harness);
     if (git.error) return problem(git.error);
+    const owner = new URL(git.url).pathname.split('/')[1];
+    const imitated = imitatedOwner(owner);
+    if (imitated) return problem(`source owner "${owner}" looks like "${imitated}" but is a different GitHub account`);
     if (typeof source.sha !== 'string' || !SHA.test(source.sha)) {
       return problem('git sources must pin "sha" to a full 40-character lowercase commit');
     }
