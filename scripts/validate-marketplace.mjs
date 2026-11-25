@@ -56,6 +56,8 @@ const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const MAX_NAME_LENGTH = 64;
 const RESERVED_NAMES = new Set(['node_modules', 'plugins', 'scripts', '.claude-plugin', '.codex-plugin']);
 const REPO_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** GitHub accounts that publish Hedera's own plugins. A git source owner that imitates one fails. */
+const KNOWN_GIT_OWNERS = ['hashgraph', 'hiero-ledger'];
 const SHA = /^[0-9a-f]{40}$/;
 const TAG_NAME = /^[A-Za-z0-9._@+-]+(\/[A-Za-z0-9._@+-]+)*$/;
 const SEMVER =
@@ -126,10 +128,15 @@ const stripControl = value => String(value).replace(/[\x00-\x1f\x7f]/g, '');
 const codePoint = char => `U+${char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
-/** Parses a JSON file that must be a regular file (not a symlink). Returns { value } or { error }. */
+/**
+ * Parses a JSON file that must be a regular file (not a symlink) of at most MAX_FILE_BYTES.
+ * Returns { value } or { error }.
+ */
 function readJson(file, rel) {
   try {
-    if (!lstatSync(file).isFile()) return { error: `${rel} must be a regular file` };
+    const stats = lstatSync(file);
+    if (!stats.isFile()) return { error: `${rel} must be a regular file` };
+    if (stats.size > MAX_FILE_BYTES) return { error: `${rel} is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB` };
     return { value: JSON.parse(readFileSync(file, 'utf8')) };
   } catch (error) {
     if (error instanceof SyntaxError) return { error: `${rel} is not valid JSON (${error.message})` };
@@ -391,6 +398,32 @@ function isTagName(value) {
   );
 }
 
+/** An owner name with case and separators dropped and characters that read alike merged. */
+const foldOwner = owner =>
+  owner.toLowerCase().replace(/[-_.]/g, '').replace(/rn/g, 'm').replace(/vv/g, 'w').replace(/0/g, 'o').replace(/[1i]/g, 'l');
+
+/** Edit distance with adjacent swaps (optimal string alignment). */
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/**
+ * The known owner that `owner` imitates (the same once folded, or at most two edits away), or
+ * undefined. GitHub owner names are case-insensitive, so a known owner in another case is itself.
+ */
+function imitatedOwner(owner) {
+  if (KNOWN_GIT_OWNERS.includes(owner.toLowerCase())) return undefined;
+  return KNOWN_GIT_OWNERS.find(known => editDistance(foldOwner(owner), foldOwner(known)) <= 2);
+}
+
 /** The plugin's git source as { url, path? }, or an error string. */
 function gitSource(source, harness) {
   const allowed = HARNESSES[harness].gitSourceTypes;
@@ -632,6 +665,9 @@ function collectProblems(root, harness, checkRemote, seen) {
 
     const git = gitSource(source, harness);
     if (git.error) return problem(git.error);
+    const owner = new URL(git.url).pathname.split('/')[1];
+    const imitated = imitatedOwner(owner);
+    if (imitated) return problem(`source owner "${owner}" looks like "${imitated}" but is a different GitHub account`);
     if (typeof source.sha !== 'string' || !SHA.test(source.sha)) {
       return problem('git sources must pin "sha" to a full 40-character lowercase commit');
     }

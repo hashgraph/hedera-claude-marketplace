@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, afterEach, before, describe, test } from 'node:test';
@@ -107,6 +107,25 @@ for (const harness of ['claude', 'codex']) {
       if (harness === 'claude') sources.push({ source: 'github', repo: 'acme/demo', ref: REF, sha: SHA });
       const plugins = sources.map((source, i) => gitEntry[harness](`demo-${i}`, source));
       assert.deepEqual(validate(makeRepo(harness, { plugins })), []);
+    });
+
+    test('rejects a source owner that imitates a Hedera org', () => {
+      const check = owner => {
+        const entry = gitEntry[harness]('demo', { source: 'url', url: `https://github.com/${owner}/demo.git`, ref: REF, sha: SHA });
+        return validate(makeRepo(harness, { plugins: [entry] })).join('\n');
+      };
+      const imitations = {
+        hashgraph: ['hashgraaph', 'hashgrahp', 'hash-graph', 'hashgraph-', 'hashgrapn', 'Hashgraphs', 'hasngraph'],
+        'hiero-ledger': ['hiero-1edger', 'hieroledger', 'hiero_ledger', 'hiero-ledgr', 'hlero-ledger', 'h1ero-ledger'],
+      };
+      for (const [known, owners] of Object.entries(imitations)) {
+        for (const owner of owners) {
+          assert.match(check(owner), new RegExp(`source owner "${owner}" looks like "${known}" but is a different GitHub account`), owner);
+        }
+      }
+      for (const owner of ['hashgraph', 'Hashgraph', 'hiero-ledger', 'acme', 'hashgraph-online', 'hedera-dev']) {
+        assert.doesNotMatch(check(owner), /source owner/, owner);
+      }
     });
 
     test('rejects a wrong marketplace name', () => {
@@ -427,6 +446,15 @@ for (const harness of ['claude', 'codex']) {
       mkdirSync(path.join(root, 'plugins/demo/many'));
       for (let i = 0; i < MAX_FILES; i++) writeFileSync(path.join(root, `plugins/demo/many/${i}`), '');
       assert.match(validate(root).join('\n'), new RegExp(`plugins/: has more than ${MAX_FILES} files`));
+    });
+
+    test('caps the size of the marketplace and plugin manifests before parsing them', () => {
+      const root = makeRepo(harness, { plugins: [localEntry[harness]('demo')], dirs: { demo: '1.0.0' } });
+      const manifest = `plugins/demo/${HARNESSES[harness].manifestPaths[0]}`;
+      truncateSync(path.join(root, manifest), MAX_FILE_BYTES + 1);
+      assert.match(validate(root).join('\n'), new RegExp(`\\./${manifest.replaceAll('.', '\\.')} is larger than 16 MB`));
+      truncateSync(path.join(root, HARNESSES[harness].marketplacePath), MAX_FILE_BYTES + 1);
+      assert.deepEqual(validate(root), [`${HARNESSES[harness].marketplacePath} is larger than 16 MB`]);
     });
 
     test('rejects invisible Unicode in text files under plugins/', () => {
@@ -962,6 +990,17 @@ for (const harness of ['claude', 'codex']) {
       const output = check('v9.9.9', SHA).join('\n');
       assert.match(output, /ref "v9\.9\.9" resolves to nothing/);
       assert.match(output, new RegExp(`commit ${SHA} is not fetchable from ${upstream.url}`));
+    });
+
+    test('fails closed when the host cannot be reached', () => {
+      process.env.GIT_CONFIG_KEY_0 = `url.file://${upstream.dir}-missing/.insteadOf`;
+      try {
+        const output = check('v1.0.0', upstream.first).join('\n');
+        assert.match(output, /tags cannot be listed from https:\/\/github\.com\/acme\/upstream\.git/);
+        assert.match(output, new RegExp(`commit ${upstream.first} is not fetchable`));
+      } finally {
+        process.env.GIT_CONFIG_KEY_0 = upstream.config.GIT_CONFIG_KEY_0;
+      }
     });
 
     test('the https-only config still blocks the file:// rewrite on its own', () => {

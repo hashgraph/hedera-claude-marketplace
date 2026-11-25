@@ -80,7 +80,8 @@ Details are in the [Claude Code marketplace reference](https://code.claude.com/d
   Unicode characters, and none is over 16 MB. The root `.gitattributes` sets no drivers either.
 - A pinned git entry uses an `https://github.com/<owner>/<repo>` URL, a relative `path`, a tag
   `ref` and a full `sha`. With `--check-remote`, the tag must resolve to exactly that commit in the
-  upstream repository.
+  upstream repository. An `<owner>` that imitates `hashgraph` or `hiero-ledger` (such as
+  `hashgraaph` or `hiero-1edger`) fails.
 - Every folder in `plugins/` has an entry, and no folder holds key material, `.env` files or a
   keystore.
 - On a pull request (`--base=origin/main`), an in-repo plugin whose files changed must raise its
